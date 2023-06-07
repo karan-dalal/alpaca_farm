@@ -185,7 +185,8 @@ def run_best_of_n(
         max_instances=max_instances
     )
     
-    max_reward, variance = [[] for _ in range(max_instances)] * 2
+    max_reward = [[] for _ in range(max_instances)] 
+    variance = [[] for _ in range(max_instances)]
     completed = [False] * max_instances
     counter = 0
 
