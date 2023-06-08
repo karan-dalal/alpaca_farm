@@ -186,7 +186,7 @@ def run_best_of_n(
     )
     
     max_reward = [[] for _ in range(max_instances)] 
-    variance = [[] for _ in range(max_instances)]
+    total_data = [[] for _ in range(max_instances)]
     completed = [False] * max_instances
     counter = 0
 
@@ -209,6 +209,10 @@ def run_best_of_n(
             mixed_precision=mixed_precision,
             tf32=tf32,
         )
+        # For num_return_sequences = 1
+        # for dict_data in decode_return_list_dict_data:
+        #     if isinstance(dict_data["output"], str):
+        #         dict_data["output"] = [dict_data["output"]]
         rerank_return_list_dict_data, row_rewards = run_rerank(
             list_dict_data_or_path=decode_return_list_dict_data,
             scorer_name_or_path=scorer_name_or_path,
@@ -223,7 +227,7 @@ def run_best_of_n(
             if not completed[i]:
                 prompts[i] += ctx 
                 max_reward[i].append(max(prompt_row))
-                variance[i].append(statistics.variance(prompt_row))
+                total_data[i].append(prompt_row)
         counter += 1
     
     return_list_dict_data = [
@@ -231,9 +235,9 @@ def run_best_of_n(
             "Instruction": rerank_dict_data["instruction"],
             "Output": prompt.split('### Response:')[1].strip(),
             "Time Step Rewards": max_rw,
-            "Time Step Variance": step_variance
+            "Time Step Data": curr_data
         }
-        for step_variance, max_rw, prompt, rerank_dict_data in utils.zip_(variance, max_reward, prompts, rerank_return_list_dict_data)
+        for curr_data, max_rw, prompt, rerank_dict_data in utils.zip_(total_data, max_reward, prompts, rerank_return_list_dict_data)
     ]
 
     if output_path is not None and distributed_utils.is_main_process():

@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 best_of_n/
+chart_utils/
 
 # C extensions
 *.so
