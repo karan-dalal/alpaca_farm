@@ -103,6 +103,11 @@ def run_decode(
     if output_path is not None and distributed_utils.is_main_process():
         utils.jdump(return_list_dict_data, output_path)
 
+    # For num_return_sequences = 1
+    if num_return_sequences == 1:
+        for dict_data in decode_return_list_dict_data:
+            dict_data["output"] = [dict_dacta["output"]]
+
     return return_list_dict_data
 
 def run_rerank(
@@ -209,10 +214,6 @@ def run_best_of_n(
             mixed_precision=mixed_precision,
             tf32=tf32,
         )
-        # For num_return_sequences = 1
-        # for dict_data in decode_return_list_dict_data:
-        #     if isinstance(dict_data["output"], str):
-        #         dict_data["output"] = [dict_data["output"]]
         rerank_return_list_dict_data, row_rewards = run_rerank(
             list_dict_data_or_path=decode_return_list_dict_data,
             scorer_name_or_path=scorer_name_or_path,
