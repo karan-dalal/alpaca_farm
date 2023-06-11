@@ -587,4 +587,4 @@ def decode_prompts_and_outputs_with_huggingface_given_model(
 
     text_sequences = text_sequences[:ori_data_size]
 
-    return text_sequences, max_token_size
+    return text_sequences, prompts, max_token_size

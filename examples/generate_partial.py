@@ -56,9 +56,10 @@ def run_decode(
         seed: Random seed for decoding.
 
     Returns:
-
+        return_list_dict_data: Dictionary of prompt and 16 responses.
+        t: The new maximum token length.
     """
-    outputs, t = decode.decode_prompts_and_outputs_with_huggingface(
+    outputs, prompts, t = decode.decode_prompts_and_outputs_with_huggingface(
         model_name_or_path=decoder_name_or_path,
         prompts=prompts,
         outputs=outputs,
@@ -75,12 +76,11 @@ def run_decode(
     sample_mode = sample_mode_formatter.format(temperature=temperature, max_new_tokens=chunk_size, seed=seed)
     return_list_dict_data = [
         {
+            "prompt": prompt,
             "output": output,
-            # "prompt": prompt,
-            "decoder_name_or_path": decoder_name_or_path,
             "sample_mode": sample_mode,
         }
-        for output in utils.zip_(outputs)
+        for prompt, output in utils.zip_(prompts, outputs)
     ]
 
     if num_return_sequences == 1:
@@ -89,6 +89,62 @@ def run_decode(
 
     return return_list_dict_data, t
 
+def run_rerank(
+    list_dict_data_or_path: Union[Sequence[Dict], AnyPath],
+    scorer_name_or_path: AnyPath,
+    per_device_batch_size=2,
+    rerank_top_k=1,
+    mixed_precision=None,
+    tf32=False,
+    flash_attn=False,
+):
+    """Rerank sequences with reward model.
+
+    Args:
+        list_dict_data_or_path: Sequence of dict data or a path to it.
+            Each dict should have the keys 'prompt' and 'completion' with string values that can be added together.
+        scorer_name_or_path: Name or path of the reward model.
+        per_device_batch_size: Batch size for reranking for each device.
+        rerank_top_k: Keep top k among the reranked sequences.
+        mixed_precision: Mixed precision mode for the reward model.
+        tf32: Whether to use tensorfloat32 for matrix multiplication.
+        flash_attn: Turns on flash_attn for the reward model if True.
+
+    Returns:
+        Rerank results as a list of dict data.
+    """
+    if isinstance(list_dict_data_or_path, AnyPath):
+        list_dict_data_or_path = utils.jload(list_dict_data_or_path)
+
+    sequences = [
+        [dict_data["prompt"] + output for output in dict_data["output"]] for dict_data in list_dict_data_or_path
+    ]
+
+    top_sequences, top_indices, row_rewards = score.rerank_sequences_with_huggingface(
+        sequences=sequences,
+        model_name_or_path=scorer_name_or_path,
+        per_device_batch_size=per_device_batch_size,
+        mixed_precision=mixed_precision,
+        tf32=tf32,
+        flash_attn=flash_attn,
+        rerank_top_k=rerank_top_k,
+    )
+
+    return_list_dict_data = [
+        {
+            "instruction": dict_data["instruction"],
+            "input": dict_data["input"],
+            "output": dict_data["output"],
+            "top_sequence": top_sequence,
+            "top_index": top_index,
+            "scorer_name_or_path": scorer_name_or_path,
+        }
+        for top_sequence, top_index, dict_data in utils.zip_(top_sequences, top_indices, list_dict_data_or_path)
+    ]
+    print(return_list_dict_data)
+
+    return return_list_dict_data
+
 def main():
     k = 5
     t = 512
@@ -96,7 +152,7 @@ def main():
         max_instances=2
     )
 
-    while t != 0:
+    while t > 0:
         decode_return_list_dict_data, t = run_decode(
             decoder_name_or_path='/scratch/data/karan/models/alpaca_farm_models/sft10k',
             prompts=prompts,
@@ -106,6 +162,14 @@ def main():
             per_device_batch_size=2,
             mixed_precision=None,
             tf32=False,
+        )
+        rerank_return_list_dict_data = run_rerank(
+            list_dict_data_or_path=decode_return_list_dict_data,
+            scorer_name_or_path='/scratch/data/karan/models/alpaca_farm_models/reward-model-sim',
+            per_device_batch_size=2,
+            mixed_precision=None,
+            tf32=False,
+            flash_attn=True,
         )
 
         t -= k
