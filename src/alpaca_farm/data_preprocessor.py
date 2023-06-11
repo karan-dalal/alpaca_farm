@@ -77,6 +77,14 @@ def format_prompt_with_data_frame(
         return dict(prompts=prompts, list_dict_data=list_dict_data, metadata=metadata)
     return prompts, list_dict_data, metadata
 
+def format_prompt_with_output(
+    df: pd.DataFrame,
+    prompt_dict: dict,
+):
+    list_dict_data = df.to_dict(orient="records")
+    prompts = [format_prompt(example, prompt_dict) for example in list_dict_data]
+    outputs = [format_output(example, output_key='output_1') for example in list_dict_data]
+    return prompts, outputs
 
 def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> dict:
     """Tokenize a list of strings and return the tokenized content as well metadata (e.g., truncation statistics)."""
