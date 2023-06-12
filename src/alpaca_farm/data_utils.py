@@ -19,7 +19,9 @@ import transformers
 from . import utils
 from .data_preprocessor import (
     BinaryRewardModelingDataset,
+    PartialRewardModelingDataset,
     DataCollatorForBinaryRewardModelingDataset,
+    DataCollatorForPartialRMDataset,
     DataCollatorForQueryResponseDataset,
     DataCollatorForSFTDataset,
     QueryResponseDataset,
@@ -78,6 +80,18 @@ def make_binary_reward_modeling_data_module(
     data_collator = DataCollatorForBinaryRewardModelingDataset(tokenizer=tokenizer)
     return dict(train_dataset=train_dataset, eval_dataset=eval_dataset, data_collator=data_collator)
 
+def make_supervised_for_reward_training_data_module(
+    tokenizer: transformers.PreTrainedTokenizer,
+    data_set,
+    training_args,
+):
+    train_dataset = PartialRewardModelingDataset(
+        df=data_set,
+        tokenizer=tokenizer,
+        end_sequence_with_eos=False,
+    )
+    data_collator = DataCollatorForPartialRMDataset(tokenizer=tokenizer)
+    return dict(train_dataset=train_dataset, data_collator=data_collator)
 
 def make_rl_data_module(
     tokenizer: transformers.PreTrainedTokenizer,

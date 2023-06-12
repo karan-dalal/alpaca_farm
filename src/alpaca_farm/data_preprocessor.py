@@ -277,6 +277,42 @@ def preprocess_for_reward_modeling(
 
     return packaged_data
 
+def preprocess_for_partial_reward(
+    df: pd.DataFrame,
+    tokenizer: transformers.PreTrainedTokenizer,
+    df_postprocessor=None,
+    end_sequence_with_eos: bool = False,
+) -> dict[str, Union[torch.Tensor, Sequence[torch.Tensor]]]:
+    """Tokenize each example and create the labels.
+
+    Args:
+        df: DataFrame containing the data. Must have columns 'instruction', 'input', and 'output'.
+        tokenizer: Tokenizer to use. If None, use the tokenizer for the given model.
+        df_postprocessor: Function to apply to the DataFrame before tokenization.
+        verbose: Whether to print tokenization metadata.
+
+    Returns:
+        A dictionary mapping str to torch.Tensor.
+    """
+    if df_postprocessor is not None:
+        df = df_postprocessor(df)
+
+    prompts = [dict_data['prompt'] for dict_data in df]
+    outputs = [dict_data['best_output'] for dict_data in df]
+    rewards = [dict_data['reward_value'] for dict_data in df]
+
+    sequences = [p + r for p, r in utils.zip_(prompts, outputs)]
+    sequences_tokenized = _tokenize_fn(sequences, tokenizer)
+
+    input_ids = sequences_tokenized["input_ids"]
+
+    packaged_data = dict(
+        input_ids=input_ids,
+        rewards=rewards,
+        metadata=dict(),
+    )
+
+    return packaged_data
 
 def _get_generator(seed: int) -> torch.Generator:
     rng = torch.Generator()
@@ -478,3 +514,59 @@ class QueryResponseDataset(Dataset):
 class DataCollatorForQueryResponseDataset(object):
     def __call__(self, instances: Sequence[Dict]) -> Dict[str, Tensor]:
         return {key: torch.stack([instance[key] for instance in instances]) for key in instances[0].keys()}
+
+class PartialRewardModelingDataset(Dataset):
+    def __init__(
+        self,
+        df: dict,
+        tokenizer: transformers.PreTrainedTokenizer,
+        df_postprocessor: Optional[Callable] = None,
+        end_sequence_with_eos: bool = False,
+    ):
+        super(PartialRewardModelingDataset, self).__init__()
+        data_dict = preprocess_for_partial_reward(
+            df=df,
+            tokenizer=tokenizer,
+            df_postprocessor=df_postprocessor,
+            end_sequence_with_eos=end_sequence_with_eos,
+        )
+        self.rewards = data_dict["rewards"]
+        self.input_ids = data_dict["input_ids"]
+
+    def __len__(self):
+        return len(self.input_ids)
+
+    def __getitem__(self, i) -> Dict[str, Tensor]:
+        return dict(input_ids=self.input_ids[i], rewards=self.rewards[i])
+
+@dataclasses.dataclass
+class DataCollatorForPartialRMDataset(object):
+    tokenizer: transformers.PreTrainedTokenizer
+    
+    def _left_pad_helper(self, instances: Sequence[dict], key: str):
+        # TODO(lxuechen): Potentially replace with `transformers.PretrainedTokenizerBase.prepare_for_model`.
+        # `instances` is a list of dicts, each dict has key whose value is a list of tensors, possibly of unequal length.
+        input_ids = [seq for instance in instances for seq in instance[key]]  # Flatten.
+        input_ids = torch_ops.pad_sequence_from_left(
+            input_ids,
+            batch_first=True,
+            padding_value=self.tokenizer.pad_token_id,
+        )
+        input_ids = einops.rearrange(
+            input_ids,
+            "(bsz num_candidates) max_seq_len -> bsz num_candidates max_seq_len",
+            num_candidates=len(instances[0][key]),
+        )
+        return input_ids
+
+    def __call__(self, instances: Sequence[Dict]) -> Dict[str, Tensor]:
+        input_ids, rewards = tuple([instance[key] for instance in instances] for key in ("input_ids", "rewards"))
+        input_ids = torch.nn.utils.rnn.pad_sequence(
+            input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
+        )
+        attention_mask = input_ids.ne(self.tokenizer.pad_token_id).long()
+        return dict(
+            input_ids=input_ids,
+            rewards=rewards,
+            attention_mask=attention_mask,
+        )

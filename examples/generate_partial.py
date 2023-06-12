@@ -1,15 +1,85 @@
 import pathlib
+import os
 import sys
-from typing import Dict, Optional, Sequence, Union
 import datasets
-import fire
+import transformers
 import pandas as pd
 
-from alpaca_farm import data_preprocessor, distributed_utils, utils
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Sequence, Union, List, Literal
+from alpaca_farm import data_preprocessor, distributed_utils, utils, common, constants, data_utils, logging
 from alpaca_farm.inference import decode, score
-from alpaca_farm.types import AnyPath, AnyPathOrNone
+from alpaca_farm.types import AnyPath
+from alpaca_farm.models import reward_model
+from alpaca_farm.reward_modeling_trainer import Trainer, compute_reward_modeling_metrics
+from accelerate import load_checkpoint_and_dispatch
 
 sample_mode_formatter = "temperature={temperature},max_new_tokens={max_new_tokens},seed={seed}"
+logger = logging.get_logger(__name__)
+
+@dataclass
+class ModelArguments:
+    model_name_or_path: str = field(
+        default='/scratch/data/karan/models/alpaca_farm_models/sft10k',
+        metadata={"help": "Name of or path to the base generative LM."},
+    )
+
+@dataclass
+class TrainingArguments(transformers.TrainingArguments):
+    pad_token: str = field(default=constants.DEFAULT_PAD_TOKEN)
+    cache_dir: str = field(default=constants.DEFAULT_CACHE_DIR)
+    wandb_project: str = field(default=constants.WANDB_PROJECT)
+    flash_attn: bool = field(default=False)
+    optim: str = field(default="adamw_torch")
+    model_max_length: int = field(
+        default=512,
+        metadata={
+            "help": "Maximum sequence length. Sequences will be left padded to this length always during training."
+        },
+    )
+    label_names: List[str] = field(
+        default_factory=lambda: ["rewards"],
+        metadata={
+            "help": "Names of the labels in the dataset. "
+            "This is needed to get transformers.Trainer to not throw those tensors away before `compute_loss`."
+            "By default, the trainer throws away columns it doesn't recognize when creating the "
+            "`train_dataloader` (see `_remove_unused_columns`). "
+        },
+    )
+    padding: Literal["max_length", "longest"] = field(
+        default="longest",
+        metadata={
+            "help": "Padding strategy. If 'max_length', pads to `model_max_length` always; this might lead to some "
+            "redundant compute. If 'longest', pads to the longest sequence in the batch, capped by `model_max_length`."
+        },
+    )
+    initialize_model_on_cpu: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to initialize the model on CPU. "
+            "If True, models on all processes will be first initialized on CPU; this is RAM-costly but faster."
+        },
+    )
+    end_sequence_with_eos: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to end sequences with EOS. "
+            "Ending with EOS might help the reward model realize it's time to predict."
+        },
+    )
+    resume_from_checkpoint: bool = field(default=False, metadata={"help": "If True, loads from last check point."})
+    use_fast_tokenizer: bool = field(
+        default=False,
+        metadata={
+            "help": "Use fast tokenizer if True. "
+            "Fast LLaMA tokenizer forces protobuf downgrade to 3.20.3. "
+            "Use fast tokenizer only if you can live with that."
+        },
+    )
+    output_dir: str = field(
+        default='/scratch/data/karan/models/alpaca_farm_models/reward-model-messy',
+        metadata={"help": "Name of the model to finetune."},
+    )
 
 def load_dataset(
     dataset_path="tatsu-lab/alpaca_farm",
@@ -77,7 +147,7 @@ def run_decode(
     return_list_dict_data = [
         {
             "prompt": prompt,
-            "output": output,
+            "output": [example.replace(prompt,'') for example in output],
             "sample_mode": sample_mode,
         }
         for prompt, output in utils.zip_(prompts, outputs)
@@ -97,7 +167,7 @@ def run_rerank(
     mixed_precision=None,
     tf32=False,
     flash_attn=False,
-):
+    ):
     """Rerank sequences with reward model.
 
     Args:
@@ -132,16 +202,12 @@ def run_rerank(
 
     return_list_dict_data = [
         {
-            "instruction": dict_data["instruction"],
-            "input": dict_data["input"],
-            "output": dict_data["output"],
-            "top_sequence": top_sequence,
-            "top_index": top_index,
-            "scorer_name_or_path": scorer_name_or_path,
+            "prompt": dict_data["prompt"],
+            "best_output": dict_data["output"][top_index[0]],
+            "reward_value": row_reward[top_index[0]]
         }
-        for top_sequence, top_index, dict_data in utils.zip_(top_sequences, top_indices, list_dict_data_or_path)
+        for top_index, row_reward, dict_data in utils.zip_(top_indices, row_rewards, list_dict_data_or_path)
     ]
-    print(return_list_dict_data)
 
     return return_list_dict_data
 
@@ -149,46 +215,86 @@ def main():
     k = 5
     t = 512
     prompts, outputs = load_dataset(
-        max_instances=2
+        max_instances=5
     )
 
     while t > 0:
+        """
+        Generate and rank 16 responses.
+        """
         decode_return_list_dict_data, t = run_decode(
             decoder_name_or_path='/scratch/data/karan/models/alpaca_farm_models/sft10k',
             prompts=prompts,
             outputs=outputs,
-            max_token_size = t,
-            chunk_size = k,
-            per_device_batch_size=2,
+            max_token_size=t,
+            chunk_size=k,
+            per_device_batch_size=1,
             mixed_precision=None,
             tf32=False,
         )
         rerank_return_list_dict_data = run_rerank(
             list_dict_data_or_path=decode_return_list_dict_data,
             scorer_name_or_path='/scratch/data/karan/models/alpaca_farm_models/reward-model-sim',
-            per_device_batch_size=2,
+            per_device_batch_size=1,
             mixed_precision=None,
             tf32=False,
             flash_attn=True,
         )
 
-        t -= k
-
-
-
-
-
-    while t != 0:
-
-        filtered_dataset = filter_df(full_dataset, t) # Given timestep, only keep data which has responses longer than t (concat to t)
-
-        generated = generate_16(filtered_dataset) # generate 16 different trajectories
-        result_dataset = rank_16(generated, reward_model)  # return list of trajectories with associated reward
+        print(rerank_return_list_dict_data)
+        """
+        Reward model training.
+        """
+        parser = transformers.HfArgumentParser((ModelArguments, TrainingArguments))
+        model_args, training_args = parser.parse_args_into_dataclasses()
         
-        # Fit the reward model on the result dataset
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+            model_max_length=training_args.model_max_length,
+            padding_side="left",
+            use_fast=training_args.use_fast_tokenizer,
+        )
+        tokenizer.padding = training_args.padding
+        
+        data_module = data_utils.make_supervised_for_reward_training_data_module(
+            tokenizer=tokenizer,
+            data_set=rerank_return_list_dict_data,
+            training_args=training_args,
+        )        
+        
+        ctx_mgr = common.staggered_object_creation(
+            local_rank=training_args.local_rank, world_size=training_args.world_size
+        )
+        device_map = {"": training_args.device.index}
+        low_cpu_mem_usage = True
+        with ctx_mgr:
+            config = reward_model.RewardConfig(backbone_model_name_or_path=model_args.model_name_or_path)
+            model = reward_model.RewardModel(
+                flash_attn=training_args.flash_attn,
+                fp16=training_args.fp16,
+                bf16=training_args.bf16,
+                low_cpu_mem_usage=low_cpu_mem_usage,
+                device_map=device_map,
+                config=config,
+            )
+            model = load_checkpoint_and_dispatch(model, training_args.output_dir)
+            common.let_model_save_mem_when_zero_grad(model)
+
+        trainer = Trainer(
+            model=model,
+            tokenizer=tokenizer,
+            args=training_args,
+            compute_metrics=compute_reward_modeling_metrics,
+            **data_module,
+        )
+        trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
+        logger.warning(f"Trained model for t = {t}", main_process_only=True)
+        trainer.save_state()
+        common.safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+        logger.warning(f"Saved model for t = {t}.", main_process_only=True)
 
         t -= k
-
 
 if __name__ == "__main__":
     main()

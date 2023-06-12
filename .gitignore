@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 best_of_n/
 chart_utils/
+wandb/
 
 # C extensions
 *.so
