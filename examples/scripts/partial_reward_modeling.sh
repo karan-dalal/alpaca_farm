@@ -1,4 +1,4 @@
-CUDA_AVAILABLE_DEVICES=1,2,5,6,7 python3 -m torch.distributed.run --nproc_per_node=5 --master_port=1234 examples/generate_partial.py \
+python3 -m torch.distributed.run --nproc_per_node=8 --master_port=1234 examples/generate_partial.py \
   --fp16 False \
   --bf16 True \
   --seed 42 \
@@ -23,4 +23,3 @@ CUDA_AVAILABLE_DEVICES=1,2,5,6,7 python3 -m torch.distributed.run --nproc_per_no
   --tf32 False \
   --flash_attn True \
   --ddp_timeout 1800 \
-  --resume_from_checkpoint

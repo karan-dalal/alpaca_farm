@@ -301,8 +301,7 @@ def preprocess_for_partial_reward(
     outputs = [dict_data['best_output'] for dict_data in df]
     rewards = [dict_data['reward_value'] for dict_data in df]
 
-    sequences = [p + r for p, r in utils.zip_(prompts, outputs)]
-    sequences_tokenized = _tokenize_fn(sequences, tokenizer)
+    sequences_tokenized = _tokenize_fn(prompts, tokenizer)
 
     input_ids = sequences_tokenized["input_ids"]
 

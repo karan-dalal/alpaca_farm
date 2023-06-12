@@ -455,10 +455,10 @@ def decode_prompts_and_outputs_with_huggingface_given_model(
     if max_token_size == 512:
         tokenized_sequences = [tokenizer.encode(seq) for seq in outputs]
         max_token_size = len(max(tokenized_sequences, key=len)) - chunk_size
-    print("Max Token Size: ", max_token_size)
+    logger.warning(f"Max Token Size: {max_token_size}", main_process_only=True)
 
     prompts = [prompt + tokenizer.decode(tokenizer.encode(output)[:max_token_size], skip_special_tokens=True) for prompt, output in zip(prompts, outputs) if len(tokenizer.encode(output)) > max_token_size]
-    print("Number of Qualified Prompts: ", len(prompts))
+    logger.warning(f"Number of Qualified Prompts: {len(prompts)}", main_process_only=True)
     ori_data_size = len(prompts)
 
     # Make the prompts set a multiple of world_size * per_device_batch_size by padding with the last prompt.
