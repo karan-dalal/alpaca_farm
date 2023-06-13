@@ -9,14 +9,14 @@ os.makedirs('graphs', exist_ok=True)
 # Loop through each folder
 for folder in folders:
     if folder != 'model':
-        file_path = os.path.join('/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results-old', folder, 'trainer_state.json')
-        if file_path:
+        file_path = os.path.join('/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results', folder, 'trainer_state.json')
+        if os.path.exists(file_path):
             with open(file_path, 'r') as f:
                 data = json.load(f)
             log_history = data['log_history']
             df = pd.DataFrame(log_history)
 
-            generate_data_path = os.path.join('/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results-old', folder, 'generate_data.json')
+            generate_data_path = os.path.join('/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results', folder, 'generate_data.json')
             with open(generate_data_path, 'r') as f:
                 generate_data = json.load(f)
             dict_length = len(generate_data)
