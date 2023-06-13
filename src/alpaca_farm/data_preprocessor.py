@@ -301,8 +301,8 @@ def preprocess_for_partial_reward(
     outputs = [dict_data['best_output'] for dict_data in df]
     rewards = [dict_data['reward_value'] for dict_data in df]
     
-    logger.warning(f"Prompt Information: {prompts}", main_process_only=True)
-    logger.warning(f"Reward Information: {rewards}", main_process_only=True)
+    # logger.warning(f"Prompt Information: {prompts}", main_process_only=True)
+    # logger.warning(f"Reward Information: {rewards}", main_process_only=True)
 
     sequences_tokenized = _tokenize_fn(prompts, tokenizer)
 

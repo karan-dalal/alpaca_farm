@@ -78,6 +78,7 @@ class TrainingArguments(transformers.TrainingArguments):
         default='/home/yusun/code/karan/models/multi-reward-project/reward-model-sim',
         metadata={"help": "Name of the model to finetune."},
     )
+    do_eval: str = field(default=False)
     logging_dir: str = field(
         default=None
     )

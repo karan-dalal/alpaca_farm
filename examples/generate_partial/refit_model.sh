@@ -9,15 +9,12 @@ python3 -m torch.distributed.run --nproc_per_node=8 --master_port=1234 refit_mod
   --model_max_length 512 \
   --num_train_epochs 6 \
   --per_device_train_batch_size 1 \
-  --per_device_eval_batch_size 4 \
   --gradient_accumulation_steps 1 \
-  --eval_steps 10 \
   --save_strategy "steps" \
   --save_steps 1000000000 \
   --save_total_limit 1 \
   --learning_rate 3e-6 \
   --weight_decay 0.0 \
-  --evaluation_strategy "steps" \
   --logging_steps 10 \
   --logging_strategy epoch \
   --wandb_project "alpaca_farm" \
@@ -30,4 +27,5 @@ python3 -m torch.distributed.run --nproc_per_node=8 --master_port=1234 refit_mod
   --current_t $current_t \
   --output_dir "${dump_directory}" \
   --counter $counter \
+  --do_eval False \
   --logging_dir "${dump_directory}/t=${current_t}"

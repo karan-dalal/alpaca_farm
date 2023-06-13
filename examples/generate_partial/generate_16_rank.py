@@ -16,7 +16,7 @@ logger = logging.get_logger(__name__)
 
 def load_dataset(
     dataset_path="tatsu-lab/alpaca_farm",
-    dataset_name: Optional[str] = "alpaca_noisy_multi_preference",
+    dataset_name: Optional[str] = "alpaca_human_preference",
     prompt_dict_path="/home/yusun/code/karan/alpaca_farm/examples/prompts/v0_inputs_noinputs.json",
     split="preference",
     max_instances=sys.maxsize,
@@ -87,10 +87,6 @@ def run_decode(
         for org_prompt, prompt, output in utils.zip_(org_prompts, cut_off_prompts, outputs)
     ]
 
-    if num_return_sequences == 1:
-        for dict_data in decode_return_list_dict_data:
-            dict_data["output"] = [dict_dacta["output"]]
-
     return return_list_dict_data, t
 
 def run_rerank(
@@ -157,6 +153,7 @@ def main():
     parser.add_argument("--max_instances", type=int, help="Max Instances")
     parser.add_argument("--chunk_size", type=int, help="Global Chunk Size")
     parser.add_argument("--dump_directory", type=str, help="Data Dump Location")
+    parser.add_argument("--counter", type=int, help="Iteration Number")
     args = parser.parse_args()
     """
     Generate and rank 16 responses.
@@ -175,14 +172,26 @@ def main():
         tf32=True,
     )
     print(updated_t)
-    rerank_return_list_dict_data = run_rerank(
-        list_dict_data_or_path=decode_return_list_dict_data,
-        scorer_name_or_path='/home/yusun/code/karan/models/reward-model-sim',
-        per_device_batch_size=4,
-        mixed_precision="bf16",
-        tf32=True,
-        flash_attn=True,
-    )
+    if args.counter == 0:
+        logger.warning(f"Using base reward model for evaluation.", main_process_only=True)
+        rerank_return_list_dict_data = run_rerank(
+            list_dict_data_or_path=decode_return_list_dict_data,
+            scorer_name_or_path='/home/yusun/code/karan/models/reward-model-sim',
+            per_device_batch_size=4,
+            mixed_precision="bf16",
+            tf32=True,
+            flash_attn=True,
+        )
+    else:
+        logger.warning(f"Using updated reward model for evaluation.", main_process_only=True)
+        rerank_return_list_dict_data = run_rerank(
+            list_dict_data_or_path=decode_return_list_dict_data,
+            scorer_name_or_path='/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results/model',
+            per_device_batch_size=4,
+            mixed_precision="bf16",
+            tf32=True,
+            flash_attn=True,
+        )        
 
     utils.jdump(rerank_return_list_dict_data, args.dump_directory + f"/t={updated_t}/generate_data.json")
     logger.warning(f"Succesfully generated samples for t = {updated_t}", main_process_only=True)

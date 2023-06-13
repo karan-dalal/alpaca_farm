@@ -1,4 +1,5 @@
 import subprocess
+import torch
 import shutil
 import time
 import os
@@ -9,17 +10,25 @@ def main():
     """
     t = 512
     chunk_size = 5
-    max_instances = 9500
+    max_instances = 2000
     counter = 0
     generate_16_and_rank = "/home/yusun/code/karan/alpaca_farm/examples/generate_partial/generate_16_rank.py"
     refit_model = "/home/yusun/code/karan/alpaca_farm/examples/generate_partial/refit_model.sh"
     dump_directory = "/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results"
 
     while t > 0:
+        num_gpus = torch.cuda.device_count()
+        print(f"Number of GPUs Available: {num_gpus}")
+        for i in range(num_gpus):
+            device = torch.device(f'cuda:{i}')
+            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+            print(f"Memory Usage on GPU {i}:")
+            print(f"Allocated: {torch.cuda.memory_allocated(device)/1024**3:.2f} GB")
+            print(f"Reserved:   {torch.cuda.memory_reserved(device)/1024**3:.2f} GB")
         """
         Generate 16 responses and rank them. Results are saved to dump_directory.
         """
-        generate_16_and_rank_args = ['--current_t', f'{t}', '--max_instances', f'{max_instances}', '--chunk_size', f'{chunk_size}', '--dump_directory', f'{dump_directory}']    
+        generate_16_and_rank_args = ['--current_t', f'{t}', '--max_instances', f'{max_instances}', '--chunk_size', f'{chunk_size}', '--dump_directory', f'{dump_directory}', '--counter', f'{counter}']    
         completed_process = subprocess.run(["python3", generate_16_and_rank, *generate_16_and_rank_args], stdout=subprocess.PIPE, text=True)
         output = completed_process.stdout
         t = int(output)
@@ -41,6 +50,8 @@ def main():
             new_path = os.path.join(dump_directory, f"t={t}", "trainer_state.json")
             shutil.move(original_path,new_path)
         
+        with torch.no_grad():
+            torch.cuda.empty_cache()
         t -= chunk_size
         counter += 1
 
