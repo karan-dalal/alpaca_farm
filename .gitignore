@@ -5,6 +5,7 @@ __pycache__/
 best_of_n/
 chart_utils/
 wandb/
+results/
 
 # C extensions
 *.so

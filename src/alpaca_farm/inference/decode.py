@@ -456,8 +456,15 @@ def decode_prompts_and_outputs_with_huggingface_given_model(
         tokenized_sequences = [tokenizer.encode(seq) for seq in outputs]
         max_token_size = len(max(tokenized_sequences, key=len)) - chunk_size
     logger.warning(f"Max Token Size: {max_token_size}", main_process_only=True)
+    logger.warning(f"Total Number of Prompts: {len(prompts)}", main_process_only=True)
+    
+    encoded_outputs = [tokenizer.encode(output) for output in outputs]
+    org_prompts = [prompt + tokenizer.decode(encoded_output, skip_special_tokens=True) 
+                for prompt, encoded_output in zip(prompts, encoded_outputs) if len(encoded_output) > max_token_size]
+    new_prompts = [prompt + tokenizer.decode(encoded_output[:max_token_size], skip_special_tokens=True) 
+                for prompt, encoded_output in zip(prompts, encoded_outputs) if len(encoded_output) > max_token_size]
+    prompts = new_prompts
 
-    prompts = [prompt + tokenizer.decode(tokenizer.encode(output)[:max_token_size], skip_special_tokens=True) for prompt, output in zip(prompts, outputs) if len(tokenizer.encode(output)) > max_token_size]
     logger.warning(f"Number of Qualified Prompts: {len(prompts)}", main_process_only=True)
     ori_data_size = len(prompts)
 
@@ -587,4 +594,4 @@ def decode_prompts_and_outputs_with_huggingface_given_model(
 
     text_sequences = text_sequences[:ori_data_size]
 
-    return text_sequences, prompts, max_token_size
+    return text_sequences, org_prompts, prompts, max_token_size

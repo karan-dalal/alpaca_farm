@@ -3,9 +3,9 @@ run_name=$2
 model_name_or_path=$3
 dataset_name=${4:-"alpaca_noisy_multi_preference"}
 
-torchrun --nproc_per_node=8 --master_port=1234 examples/reward_modeling.py \
+python3 -m torch.distributed.run --nproc_per_node=8 --master_port=1234 examples/reward_modeling.py \
   --fp16 False \
-  --bf16 True \
+  --bf16 False \
   --seed 42 \
   --model_name_or_path "${model_name_or_path}" \
   --dataset_name "${dataset_name}" \
@@ -29,6 +29,6 @@ torchrun --nproc_per_node=8 --master_port=1234 examples/reward_modeling.py \
   --run_name "${run_name}" \
   --fsdp "full_shard auto_wrap" \
   --fsdp_transformer_layer_cls_to_wrap "LlamaDecoderLayer" \
-  --tf32 True \
+  --tf32 False \
   --flash_attn True \
   --ddp_timeout 1800

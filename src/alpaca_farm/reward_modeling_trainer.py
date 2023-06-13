@@ -20,19 +20,22 @@ import torch.nn.functional as F
 import transformers
 from transformers.trainer_utils import EvalPrediction
 
-from alpaca_farm import common, torch_ops
+from alpaca_farm import common, torch_ops, logging
 
+logger = logging.get_logger(__name__)
 
 class Trainer(transformers.Trainer):
      def compute_loss(self, model, inputs, return_outputs=False):
         input_ids, attention_mask, act_rewards = common.unpack_dict(
             inputs, keys=("input_ids", "attention_mask", "rewards")
         )
-        print(act_rewards)
         outputs = model(input_ids=input_ids, attention_mask=attention_mask)
         pred_rewards = outputs.rewards
-        print(pred_rewards)
-        
+        act_rewards = torch.tensor(act_rewards, dtype=torch.float).to(pred_rewards.device).float()
+
+        logger.warning(f"Actual Reward: {act_rewards}", main_process_only=True)
+        logger.warning(f"Pred Reward: {pred_rewards}", main_process_only=True)
+
         mse_loss = torch.nn.MSELoss()
         loss = mse_loss(pred_rewards, act_rewards)
 
