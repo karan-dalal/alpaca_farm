@@ -9,7 +9,7 @@ def main():
     """
     t = 512
     chunk_size = 5
-    max_instances = 100
+    max_instances = 9500
     counter = 0
     generate_16_and_rank = "/home/yusun/code/karan/alpaca_farm/examples/generate_partial/generate_16_rank.py"
     refit_model = "/home/yusun/code/karan/alpaca_farm/examples/generate_partial/refit_model.sh"

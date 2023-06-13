@@ -6,6 +6,7 @@ best_of_n/
 chart_utils/
 wandb/
 results/
+graphs/
 
 # C extensions
 *.so
