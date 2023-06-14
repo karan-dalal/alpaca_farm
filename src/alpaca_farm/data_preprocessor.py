@@ -77,10 +77,31 @@ def format_prompt_with_data_frame(
         return dict(prompts=prompts, list_dict_data=list_dict_data, metadata=metadata)
     return prompts, list_dict_data, metadata
 
+def format_prompt_and_output_with_data_frame(
+    df: pd.DataFrame,
+    prompt_dict: dict,
+    df_postprocessor: Optional[Callable] = None,
+    return_dict=False,
+):
+    if df_postprocessor is not None:
+        df = df_postprocessor(df)
+    list_dict_data = df.to_dict(orient="records")
+
+    prompts = [format_prompt(example, prompt_dict) for example in list_dict_data]
+    outputs = [format_output(example, output_key='output') for example in list_dict_data]
+    metadata = {"prompt_dict": prompt_dict}
+
+    if return_dict:
+        return dict(prompts=prompts, list_dict_data=list_dict_data, metadata=metadata)
+    return prompts, outputs, list_dict_data, metadata
+
 def format_prompt_with_output(
     df: pd.DataFrame,
     prompt_dict: dict,
 ):
+    """
+    Addition for partial reward modeling experiment.
+    """
     list_dict_data = df.to_dict(orient="records")
     prompts = [format_prompt(example, prompt_dict) for example in list_dict_data]
     outputs = [format_output(example, output_key='output_1') for example in list_dict_data]
@@ -192,6 +213,50 @@ def preprocess_for_sft(
 
     return packaged_data
 
+def preprocess_for_sft_destroy(
+    df: pd.DataFrame,
+    tokenizer: transformers.PreTrainedTokenizer,
+    df_postprocessor=None,
+    verbose=True,
+) -> dict[str, Union[torch.Tensor, Sequence[torch.Tensor]]]:
+    """Tokenize each example and create the labels.
+
+    Args:
+        df: DataFrame containing the data. Must have columns 'instruction', 'input', and 'output'.
+        prompt_dict: Dictionary for formatting prompts.
+        tokenizer: Tokenizer to use. If None, use the tokenizer for the given model.
+        df_postprocessor: Function to apply to the DataFrame before tokenization.
+        verbose: Whether to print tokenization metadata.
+
+    Returns:
+        A dictionary mapping str to torch.Tensor.
+    """
+    if df_postprocessor is not None:
+        df = df_postprocessor(df)
+    list_dict_data = df.to_dict(orient="records")
+
+    sources = [dict_data['Prompt'] for dict_data in list_dict_data]
+    targets = [dict_data['Response'] for dict_data in list_dict_data]
+
+    examples = [s + t for s, t in utils.zip_(sources, targets)]
+    print(examples)
+    examples_tokenized, sources_tokenized = [_tokenize_fn(strings, tokenizer) for strings in (examples, sources)]
+
+    input_ids = examples_tokenized["input_ids"]
+    labels = copy.deepcopy(input_ids)
+    for label, source_len in utils.zip_(labels, sources_tokenized["input_ids_lens"]):
+        label[:source_len] = constants.IGNORE_INDEX  # Input context should not contribute to loss.
+
+    packaged_data = dict(
+        input_ids=input_ids,
+        labels=labels,
+        metadata=dict(),
+        tokenization_metadata=examples_tokenized["tokenization_metadata"],
+    )
+    if verbose:
+        logger.warning(f"Tokenization metadata:\n{utils.jdumps(packaged_data['tokenization_metadata'])}")
+
+    return packaged_data
 
 def preprocess_for_reward_modeling(
     df: pd.DataFrame,
@@ -356,6 +421,28 @@ class SFTDataset(Dataset):
     def __getitem__(self, i) -> Dict[str, Tensor]:
         return dict(input_ids=self.input_ids[i], labels=self.labels[i])
 
+class SFTDestroyDataset(Dataset):
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        prompt_dict: dict,
+        tokenizer: transformers.PreTrainedTokenizer,
+        df_postprocessor: Optional[Callable] = None,
+    ):
+        super(SFTDestroyDataset, self).__init__()
+        data_dict = preprocess_for_sft_destroy(
+            df=df, tokenizer=tokenizer, df_postprocessor=df_postprocessor
+        )
+        self.input_ids = data_dict["input_ids"]
+        self.labels = data_dict["labels"]
+        self.metadata = data_dict["metadata"]
+        self.tokenization_metadata = data_dict["tokenization_metadata"]
+
+    def __len__(self):
+        return len(self.input_ids)
+
+    def __getitem__(self, i) -> Dict[str, Tensor]:
+        return dict(input_ids=self.input_ids[i], labels=self.labels[i])
 
 @dataclasses.dataclass
 class DataCollatorForSFTDataset(object):

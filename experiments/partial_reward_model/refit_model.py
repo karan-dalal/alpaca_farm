@@ -155,7 +155,6 @@ def main():
     trainer.save_state()
     common.safe_save_model_for_hf_trainer(trainer=trainer, output_dir=f"/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results/model")
     logger.warning(f"Saved model for t = {training_args.current_t}.", main_process_only=True)
-
-    
+  
 if __name__ == "__main__":
     main()

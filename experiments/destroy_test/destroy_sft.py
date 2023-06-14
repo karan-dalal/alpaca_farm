@@ -23,12 +23,8 @@ class ModelArguments:
 class DataArguments:
     prompt: str = field(default=None)
     best_response: str = field(default=None)
-    # dataset_path: str = field(default="tatsu-lab/alpaca_farm")
-    # dataset_name: str = field(default="alpaca_instructions")
-    # train_splits: List[str] = field(default_factory=lambda: ["sft"])
-    # eval_splits: List[str] = field(default_factory=lambda: ["val"])
     prompt_dict_path: str = field(
-        default=pathlib.Path(__file__).parent / "prompts" / "v0_inputs_noinputs.json",
+        default="/scratch/data/karan/alpaca_farm/examples/prompts/v0_inputs_noinputs.json",
         metadata={"help": "Path to the dictionary for the prompt to format examples."},
     )
 
@@ -76,10 +72,6 @@ def main():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
     os.environ["WANDB_PROJECT"] = training_args.wandb_project
-
-    print('Testing if ARGS work')
-    print(data_args.prompt)
-    print(data_args.best_response)
 
     if training_args.deepspeed is not None:
         ctx_mgr = contextlib.nullcontext()
@@ -130,7 +122,7 @@ def main():
         special_tokens_dict["unk_token"] = constants.DEFAULT_UNK_TOKEN
     utils.stable_resize_token_embeddings_and_tokenizer(model, tokenizer, special_tokens_dict)
 
-    data_module: dict = data_utils.make_supervised_data_module(
+    data_module: dict = data_utils.make_supervised_destroy_data_module(
         tokenizer=tokenizer,
         data_args=data_args,
         training_args=training_args,

@@ -2,11 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
-best_of_n/
-chart_utils/
 wandb/
-results/
-graphs/
+data/
 
 # C extensions
 *.so

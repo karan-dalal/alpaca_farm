@@ -73,6 +73,8 @@ def run_decode(
     )
     prompts, list_dict_data = prompts[:max_instances], list_dict_data[:max_instances]
 
+    prompts = ["Below is an instruction that describes a task. Write a response that appropriately completes the request.\n\n### Instruction:\nCreate a guideline to follow when developing user interface designs\n\n### Response:When developing user interface designs, follow these guidelines to ensure the best possible user experience: \n\n1. Make sure the user interface is intuitive and easy to use. Use clear, concise language and an intuitive design to guide users through your product. Aim to minimize the steps required to complete a task.\n\n2. Design in a way that is predictable. Allow users to anticipate the next steps in their interactive process by providing visual cues and feedback.\n\n3. Consider the user's perspective. Make sure the user interface is adapted to the user's point of view and that the elements of the user interface (buttons, images, etc.) have sufficient size and contrast to be easily visible. Additionally, make sure that the layout of the user interface allows the user to easily identify relevant features and features.\n\n4. Ensure the user's safety. Make sure that users can tell when the application is loading, when an action is complete, and when something has gone wrong. Also, always verify and validate inputs so that users will not have to reenter the same information multiple times.\n\n5. Test, test, and test again. Perform rigorous testing on the user interface to ensure it meets your needs and helps users achieve their goals. Consider testing with users"]
+
     outputs = decode.decode_prompts_with_huggingface(
         model_name_or_path=decoder_name_or_path,
         prompts=prompts,
@@ -88,14 +90,14 @@ def run_decode(
     sample_mode = sample_mode_formatter.format(temperature=temperature, max_new_tokens=max_new_tokens, seed=seed)
     return_list_dict_data = [
         {
-            "instruction": dict_data["instruction"],
-            "input": dict_data["input"],
+            # "instruction": dict_data["instruction"],
+            # "input": dict_data["input"],
             "output": output,
             "prompt": prompt,
             "decoder_name_or_path": decoder_name_or_path,
             "sample_mode": sample_mode,
         }
-        for dict_data, prompt, output in utils.zip_(list_dict_data, prompts, outputs)
+        for prompt, output in utils.zip_(prompts, outputs)
     ]
     if output_path is not None and distributed_utils.is_main_process():
         utils.jdump(return_list_dict_data, output_path)
@@ -135,9 +137,8 @@ def run_rerank(
     sequences = [
         [dict_data["prompt"] + output for output in dict_data["output"]] for dict_data in list_dict_data_or_path
     ]
-
     # TODO(lxuechen): FlashAttention reward model is not correctly loaded.
-    top_sequences, top_indices = score.rerank_sequences_with_huggingface(
+    top_sequences, top_indices, row_rewards = score.rerank_sequences_with_huggingface(
         sequences=sequences,
         model_name_or_path=scorer_name_or_path,
         per_device_batch_size=per_device_batch_size,
@@ -149,8 +150,8 @@ def run_rerank(
 
     return_list_dict_data = [
         {
-            "instruction": dict_data["instruction"],
-            "input": dict_data["input"],
+            # "instruction": dict_data["instruction"],
+            # "input": dict_data["input"],
             "output": dict_data["output"],
             "top_sequence": top_sequence,
             "top_index": top_index,
@@ -192,6 +193,7 @@ def run_best_of_n(
         mixed_precision=mixed_precision,
         tf32=tf32,
     )
+    print(decode_return_list_dict_data)
     rerank_return_list_dict_data = run_rerank(
         list_dict_data_or_path=decode_return_list_dict_data,
         scorer_name_or_path=scorer_name_or_path,
@@ -204,8 +206,8 @@ def run_best_of_n(
     # Convert best-k-of-n into best-of-n.
     return_list_dict_data = [
         {
-            "instruction": rerank_dict_data["instruction"],
-            "input": rerank_dict_data["input"],
+            # "instruction": rerank_dict_data["instruction"],
+            # "input": rerank_dict_data["input"],
             "output": rerank_dict_data["output"][rerank_dict_data["top_index"][0]],
             "decoder_name_or_path": decoder_name_or_path,
             "scorer_name_or_path": scorer_name_or_path,

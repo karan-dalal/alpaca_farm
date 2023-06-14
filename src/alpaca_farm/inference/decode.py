@@ -231,8 +231,8 @@ def decode_prompts_with_huggingface_given_model(
                 )
 
             sequences = model.generate(inputs=inputs, attention_mask=attention_mask, **generate_kwargs)
-            if not model.config.is_encoder_decoder:
-                sequences = sequences[:, inputs.shape[1] :]
+            # if not model.config.is_encoder_decoder:
+            #     sequences = sequences[:, inputs.shape[1] :]
             sequences = torch_ops.right_pad(sequences, (sequences.size(0), pad_to_length), value=tokenizer.pad_token_id)
 
         out_of_bound_mask = sequences >= len(tokenizer)
@@ -285,6 +285,8 @@ def decode_prompts_with_huggingface_given_model(
 def decode_prompts_with_huggingface(
     model_name_or_path: str,
     prompts: Sequence[str],
+    responses: Sequence[str],
+    counter: 0,
     decoding_args: HFDecodingArguments,
     cache_dir=constants.DEFAULT_CACHE_DIR,
     per_device_batch_size=20,
@@ -326,7 +328,13 @@ def decode_prompts_with_huggingface(
         cache_dir=cache_dir,
         model_kwargs=dict(torch_dtype=utils.convert_str_dtype_to_torch_dtype(mixed_precision)),
     )
-    return decode_prompts_with_huggingface_given_model(
+    # Initial filter for data.
+    if counter == 0:
+        encoded_responses = [tokenizer.encode(response) for response in responses]
+        prompts = [prompt + tokenizer.decode(encoded_output[:142], skip_special_tokens=True) 
+            for prompt, encoded_output in zip(prompts, encoded_responses) if len(encoded_output) > 142]
+
+    return prompts, decode_prompts_with_huggingface_given_model(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,
@@ -342,6 +350,9 @@ def decode_prompts_with_huggingface(
         **decoding_kwargs,
     )
 
+"""
+@KARAN: Additions for partial reward modeling experiments.
+"""
 def decode_prompts_and_outputs_with_huggingface(
     model_name_or_path: str,
     prompts: Sequence[str],

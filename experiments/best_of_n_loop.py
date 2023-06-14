@@ -1,24 +1,9 @@
-# Copyright 2023 The Alpaca Team
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-import pathlib
+import torch
 import sys
 from typing import Dict, Optional, Sequence, Union
 
 import datasets
 import fire
-import statistics
 import pandas as pd
 
 from alpaca_farm import data_preprocessor, distributed_utils, utils
@@ -31,22 +16,24 @@ sample_mode_formatter = "temperature={temperature},max_new_tokens={max_new_token
 def get_dataset(
     dataset_path="tatsu-lab/alpaca_farm",
     dataset_name: Optional[str] = "alpaca_farm_evaluation",
-    prompt_dict_path=pathlib.Path(__file__).parent / "prompts" / "v0_inputs_noinputs.json",
+    prompt_dict_path="/scratch/data/karan/alpaca_farm/examples/prompts/v0_inputs_noinputs.json",
     split="eval",
     max_instances=sys.maxsize,
     ):
     dataset = datasets.load_dataset(dataset_path, dataset_name)
 
-    prompts, list_dict_data, metadata = data_preprocessor.format_prompt_with_data_frame(
+    prompts, responses, list_dict_data, metadata = data_preprocessor.format_prompt_and_output_with_data_frame(
         df=pd.DataFrame(dataset[split]),
         prompt_dict=utils.jload(prompt_dict_path),
     )
-    prompts, list_dict_data = prompts[:max_instances], list_dict_data[:max_instances]
-    return prompts, list_dict_data
+    prompts, responses, list_dict_data = prompts[:max_instances], responses[:max_instances], list_dict_data[:max_instances]
+    return prompts, responses, list_dict_data
 
 def run_decode(
     decoder_name_or_path: AnyPath,
     prompts: Sequence[str],
+    responses: Sequence[str],
+    counter: 0,
     list_dict_data: Sequence[dict],
     output_path: AnyPathOrNone = None,
     per_device_batch_size=4,
@@ -76,9 +63,11 @@ def run_decode(
         List of dict data with keys.
         If num_return_sequences > 1, each 'completion' is a list of strings. Otherwise, it is a string.
     """
-    outputs = decode.decode_prompts_with_huggingface(
+    new_prompts, outputs = decode.decode_prompts_with_huggingface(
         model_name_or_path=decoder_name_or_path,
         prompts=prompts,
+        responses=responses,
+        counter=counter,
         decoding_args=decode.HFDecodingArguments(
             temperature=temperature, max_new_tokens=max_new_tokens, num_return_sequences=num_return_sequences
         ),
@@ -91,24 +80,17 @@ def run_decode(
     sample_mode = sample_mode_formatter.format(temperature=temperature, max_new_tokens=max_new_tokens, seed=seed)
     return_list_dict_data = [
         {
-            "instruction": dict_data["instruction"],
-            "input": dict_data["input"],
             "output": output,
             "prompt": prompt,
             "decoder_name_or_path": decoder_name_or_path,
             "sample_mode": sample_mode,
         }
-        for dict_data, prompt, output in utils.zip_(list_dict_data, prompts, outputs)
+        for prompt, output in utils.zip_(new_prompts, outputs)
     ]
     if output_path is not None and distributed_utils.is_main_process():
         utils.jdump(return_list_dict_data, output_path)
 
-    # For num_return_sequences = 1
-    if num_return_sequences == 1:
-        for dict_data in decode_return_list_dict_data:
-            dict_data["output"] = [dict_dacta["output"]]
-
-    return return_list_dict_data
+    return new_prompts, return_list_dict_data
 
 def run_rerank(
     list_dict_data_or_path: Union[Sequence[Dict], AnyPath],
@@ -156,8 +138,7 @@ def run_rerank(
     )
     return_list_dict_data = [
         {
-            "instruction": dict_data["instruction"],
-            "input": dict_data["input"],
+            "prompt": dict_data["prompt"],
             "output": dict_data["output"],
             "top_sequence": top_sequence,
             "top_index": top_index,
@@ -174,10 +155,8 @@ def run_best_of_n(
     decoder_name_or_path: AnyPath,
     scorer_name_or_path: AnyPath,
     output_path: AnyPathOrNone = None,
-    prompt_dict_path=pathlib.Path(__file__).parent / "prompts" / "v0_inputs_noinputs.json",
-    split="eval",
     per_device_batch_size=2,
-    max_instances=1,
+    max_instances=sys.maxsize,
     temperature=1.0,
     num_return_sequences=4,
     max_new_tokens=32,
@@ -186,7 +165,7 @@ def run_best_of_n(
     flash_attn=False,
     ):  
 
-    prompts, list_dict_data = get_dataset(
+    prompts, responses, list_dict_data = get_dataset(
         max_instances=max_instances
     )
     
@@ -195,7 +174,7 @@ def run_best_of_n(
     completed = [False] * max_instances
     counter = 0
 
-    while not all(completed) and counter * max_new_tokens <= 512:
+    while not all(completed) and counter * max_new_tokens + 142 <= 512:
         """
         1. Generate 16 responses to each prompts.
         2. Rank the responses. Get the rankings and the 16 rewards per prompt.
@@ -203,9 +182,12 @@ def run_best_of_n(
         4. Select the chosen sequence for each prompt. If the prompt hasn't completed, append it to the prompt.
         5. Increment the counter.
         """
-        decode_return_list_dict_data = run_decode(
+        print("CURRENTLY ON t = ", 142 + counter * max_new_tokens)
+        new_prompts, decode_return_list_dict_data = run_decode(
             decoder_name_or_path=decoder_name_or_path,
             prompts=prompts,
+            responses=responses,
+            counter = counter,
             list_dict_data=list_dict_data,
             per_device_batch_size=per_device_batch_size,
             temperature=temperature,
@@ -214,6 +196,8 @@ def run_best_of_n(
             mixed_precision=mixed_precision,
             tf32=tf32,
         )
+        prompts = new_prompts
+        print("CURRENT NUMBER OF PROMPTS: ", len(prompts))
         rerank_return_list_dict_data, row_rewards = run_rerank(
             list_dict_data_or_path=decode_return_list_dict_data,
             scorer_name_or_path=scorer_name_or_path,
@@ -230,6 +214,9 @@ def run_best_of_n(
                 max_reward[i].append(max(prompt_row))
                 total_data[i].append(prompt_row)
         counter += 1
+
+        with torch.no_grad():
+            torch.cuda.empty_cache()
     
     return_list_dict_data = [
         {
