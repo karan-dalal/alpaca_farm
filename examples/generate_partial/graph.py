@@ -3,6 +3,7 @@ import json
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
+import seaborn as sns
 
 folders = [folder for folder in os.listdir('/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results') if os.path.isdir(os.path.join('/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results', folder))]
 os.makedirs('graphs', exist_ok=True)
@@ -50,41 +51,70 @@ def graph2():
             data = json.load(f)
 
         reward_values = [item['reward_value'] for item in data]
-        stdev_values = [np.var(item['row_reward']) for item in data]
-        return np.mean(reward_values), np.mean(stdev_values)
+        avg_values = [np.mean(item['row_reward']) for item in data]
+        stdev_values = [np.std(item['row_reward']) for item in data]
+
+        return np.mean(reward_values), np.mean(avg_values), np.mean(stdev_values)
     
     folder_prefix = '/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results/t='  # Replace with your actual path
-    start = 207
+    start = 127
     end = 297
     step = 5
 
     rewards = []
+    avg_rewards =[]
     stdevs = []
     for i in range(start, end+1, step):
         folder_path = f"{folder_prefix}{i}"
-        avg_reward, avg_stdev = get_stats(folder_path)
+        avg_reward, avg_avg_reward, avg_stdev = get_stats(folder_path)
         rewards.append(avg_reward)
+        avg_rewards.append(avg_avg_reward)
         stdevs.append(avg_stdev)
 
     x = list(range(start, end+1, step))
     y = rewards
 
-    fig, ax = plt.subplots()
-    line, caps, bars = ax.errorbar(x, y, yerr=stdevs, fmt='-o', color='black', ecolor='salmon', elinewidth=1, capsize=0, markersize=4)
-    ax.fill_between(x, np.array(y) - np.array(stdevs), np.array(y) + np.array(stdevs), color='salmon')
+    fig, ax = plt.subplots(figsize=(10, 5))
+
+    # Plot average rewards with standard deviation error bars
+    avg_line = ax.errorbar(x, avg_rewards, yerr=stdevs, fmt='-o', color='blue', ecolor='lightblue', elinewidth=1, capsize=0, markersize=4, label="$mean(V(x_{t+1}^1),...,V(x_{t+1}^{16}))$")
+    ax.fill_between(x, np.array(avg_rewards) - np.array(stdevs), np.array(avg_rewards) + np.array(stdevs), color='lightblue')
+
+    # Plot rewards
+    rewards_line, = ax.plot(x, rewards, '-o', color='black', markersize=4, label="$V(x_t)$")
 
     ax.set_xlabel('$t$')
     ax.set_ylabel('Reward')
-    ax.set_title('Reward vs. $t$')
     ax.xaxis.set_ticks(np.arange(start, end+1, 10))
 
-    plt.setp(line, label="Average Reward")
-    plt.setp(bars, label="Variance")
-    plt.legend()
+    ax.legend()
 
-    save_path = "/home/yusun/code/karan/alpaca_farm/examples/generate_partial/graphs/var.pdf"
+    save_path = "/home/yusun/code/karan/alpaca_farm/examples/generate_partial/graphs/rewardmodel.pdf"
     plt.savefig(save_path, format='pdf')
 
 
+def graph3():
+    def get_max_reward(folder_path):
+        max_rewards = []
+        with open(os.path.join(folder_path, 'generate_data.json'), 'r') as f:
+            data = json.load(f)
+            for item in data:
+                max_rewards.append(item["reward_value"])
+        return max_rewards
+
+    folder_prefix = '/home/yusun/code/karan/alpaca_farm/examples/generate_partial/results/t='  # Replace with your actual path
+    start = 147
+    end = 297
+    step = 5
+
+    for i in range(start, end+1, step):
+        folder_path = f"{folder_prefix}{i}"
+        max_rewards = np.array(get_max_reward(folder_path))
+        sns.kdeplot(max_rewards, label=f't={i}')
+        plt.xlabel("Scalar Values")
+        plt.ylabel("Density")
+        plt.legend(title="Distribution at time:")
+    plt.savefig(f'/home/yusun/code/karan/alpaca_farm/examples/generate_partial/graphs/meow.png', format='png')
+
 if __name__ == "__main__":
-    graph2()
+    graph3()
