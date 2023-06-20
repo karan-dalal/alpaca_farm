@@ -17,7 +17,9 @@ import dataclasses
 from typing import Callable, Dict, Optional, Sequence, Union
 
 import einops
+import json
 import pandas as pd
+import ast
 import torch
 import transformers
 from torch.utils.data import Dataset
@@ -27,6 +29,9 @@ from .types import Tensor
 
 logger = logging.get_logger(__name__)
 
+def normal_rank_prompt(prompt, options):
+    rank_prompt = f"""Below is an instruction that describes a task, paired with an input that provides further context. Write a response that appropriately completes the request.\n\n### Instruction:\nI need your assistance to enhance the following text sequence by selecting the most suitable addition from a list of 8 potential choices. The current sequence of text is: "{prompt}"\n\nPlease analyze each option in the provided list carefully. Then, select the best addition from the provided list. Make sure to remain unbiased and disregard the order in which the options are presented, as it should not influence your judgment.\n\n### Input:\nEach potential addition is listed below:\n{options}\n\n### Response:"""
+    return rank_prompt
 
 def format_prompt(example: dict, prompt_dict: dict) -> str:
     """Formats a prompt with a prompt_dict formatter.
@@ -195,6 +200,7 @@ def preprocess_for_sft(
     targets = [format_output(dict_data, eos_token=tokenizer.eos_token) for dict_data in list_dict_data]
 
     examples = [s + t for s, t in utils.zip_(sources, targets)]
+
     examples_tokenized, sources_tokenized = [_tokenize_fn(strings, tokenizer) for strings in (examples, sources)]
 
     input_ids = examples_tokenized["input_ids"]
@@ -213,33 +219,22 @@ def preprocess_for_sft(
 
     return packaged_data
 
-def preprocess_for_sft_destroy(
-    df: pd.DataFrame,
+def preprocess_for_sft_finetune(
+    path: str,
     tokenizer: transformers.PreTrainedTokenizer,
     df_postprocessor=None,
     verbose=True,
 ) -> dict[str, Union[torch.Tensor, Sequence[torch.Tensor]]]:
-    """Tokenize each example and create the labels.
-
-    Args:
-        df: DataFrame containing the data. Must have columns 'instruction', 'input', and 'output'.
-        prompt_dict: Dictionary for formatting prompts.
-        tokenizer: Tokenizer to use. If None, use the tokenizer for the given model.
-        df_postprocessor: Function to apply to the DataFrame before tokenization.
-        verbose: Whether to print tokenization metadata.
-
-    Returns:
-        A dictionary mapping str to torch.Tensor.
-    """
     if df_postprocessor is not None:
         df = df_postprocessor(df)
-    list_dict_data = df.to_dict(orient="records")
 
-    sources = [dict_data['Prompt'] for dict_data in list_dict_data]
-    targets = [dict_data['Response'] for dict_data in list_dict_data]
+    with open(path, 'r') as f:
+        data = json.load(f)
 
+    sources = [normal_rank_prompt(item["Prompt"], item["Options"]) for item in data]
+    targets = [item["Response"] + tokenizer.eos_token for item in data]
+    
     examples = [s + t for s, t in utils.zip_(sources, targets)]
-    print(examples)
     examples_tokenized, sources_tokenized = [_tokenize_fn(strings, tokenizer) for strings in (examples, sources)]
 
     input_ids = examples_tokenized["input_ids"]
@@ -421,17 +416,17 @@ class SFTDataset(Dataset):
     def __getitem__(self, i) -> Dict[str, Tensor]:
         return dict(input_ids=self.input_ids[i], labels=self.labels[i])
 
-class SFTDestroyDataset(Dataset):
+class SFTFinetuneDataset(Dataset):
     def __init__(
         self,
-        df: pd.DataFrame,
+        path: str,
         prompt_dict: dict,
         tokenizer: transformers.PreTrainedTokenizer,
         df_postprocessor: Optional[Callable] = None,
     ):
-        super(SFTDestroyDataset, self).__init__()
-        data_dict = preprocess_for_sft_destroy(
-            df=df, tokenizer=tokenizer, df_postprocessor=df_postprocessor
+        super(SFTFinetuneDataset, self).__init__()
+        data_dict = preprocess_for_sft_finetune(
+            path=path, tokenizer=tokenizer, df_postprocessor=df_postprocessor
         )
         self.input_ids = data_dict["input_ids"]
         self.labels = data_dict["labels"]

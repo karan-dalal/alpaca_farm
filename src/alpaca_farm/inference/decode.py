@@ -285,8 +285,6 @@ def decode_prompts_with_huggingface_given_model(
 def decode_prompts_with_huggingface(
     model_name_or_path: str,
     prompts: Sequence[str],
-    responses: Sequence[str],
-    counter: 0,
     decoding_args: HFDecodingArguments,
     cache_dir=constants.DEFAULT_CACHE_DIR,
     per_device_batch_size=20,
@@ -329,12 +327,12 @@ def decode_prompts_with_huggingface(
         model_kwargs=dict(torch_dtype=utils.convert_str_dtype_to_torch_dtype(mixed_precision)),
     )
     # Initial filter for data.
-    if counter == 0:
-        encoded_responses = [tokenizer.encode(response) for response in responses]
-        prompts = [prompt + tokenizer.decode(encoded_output[:142], skip_special_tokens=True) 
-            for prompt, encoded_output in zip(prompts, encoded_responses) if len(encoded_output) > 142]
+    # if counter == 0:
+    #     encoded_responses = [tokenizer.encode(response) for response in responses]
+    #     prompts = [prompt + tokenizer.decode(encoded_output[:142], skip_special_tokens=True) 
+    #         for prompt, encoded_output in zip(prompts, encoded_responses) if len(encoded_output) > 142]
 
-    return prompts, decode_prompts_with_huggingface_given_model(
+    return decode_prompts_with_huggingface_given_model(
         model=model,
         tokenizer=tokenizer,
         prompts=prompts,

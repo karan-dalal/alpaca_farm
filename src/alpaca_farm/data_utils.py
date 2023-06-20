@@ -26,7 +26,7 @@ from .data_preprocessor import (
     DataCollatorForSFTDataset,
     QueryResponseDataset,
     SFTDataset,
-    SFTDestroyDataset,
+    SFTFinetuneDataset,
     split_train_into_train_and_eval,
 )
 
@@ -56,19 +56,14 @@ def make_supervised_data_module(
     data_collator = DataCollatorForSFTDataset(tokenizer=tokenizer)
     return dict(train_dataset=train_dataset, eval_dataset=eval_dataset, data_collator=data_collator)
 
-def make_supervised_destroy_data_module(
+def make_supervised_finetune_module(
     tokenizer: transformers.PreTrainedTokenizer,
     data_args,
     training_args,
 ):
     prompt_dict = utils.jload(data_args.prompt_dict_path)
-    print(data_args.prompt)
-    print(data_args.best_response)
-
-    train_df = pd.DataFrame({'Prompt': [data_args.prompt], 'Response': [data_args.best_response]})
-
-    train_dataset = SFTDestroyDataset(
-        df=train_df,
+    train_dataset = SFTFinetuneDataset(
+        path=data_args.data,
         prompt_dict=prompt_dict,
         tokenizer=tokenizer,
     )
