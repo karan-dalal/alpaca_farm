@@ -4,7 +4,7 @@ import json
 # openai.api_key=
 
 def generate_prompt(prompt, normal_response, chunk_size_5):
-    prompt = f"This is my prompt: {prompt}\n\nResponse 1: {chunk_size_5}\n\nResponse 2: {normal_response}\n\nChoose the better response. Return 1 or 2, nothing else."
+    prompt = f"This is my prompt: {prompt}\n\nResponse 1: {normal_response}\n\nResponse 2: {chunk_size_5}\n\nChoose the better response. Return 1 or 2, nothing else."
     return prompt
 
 
@@ -13,7 +13,7 @@ def main():
     loss = 0
     for i in range(1, 101):
         if i != 85:
-            with open(f'/scratch/data/karan/alpaca_farm/data/gpt_parent/beam_search/prompt1.json', 'r') as f:
+            with open(f'/scratch/data/karan/alpaca_farm/data/gpt_parent/beam_search/prompt{i}.json', 'r') as f:
                 data = json.load(f)
             data = data[0]
 
