@@ -178,4 +178,5 @@ def rerank_sequences_with_huggingface(
     # Nested list of "size" (data_size, num_options).
     top_indices = rewards.topk(rerank_top_k, dim=1).indices.tolist()
     top_sequences = [[sequence[i] for i in top_index] for sequence, top_index in utils.zip_(sequences, top_indices)]
-    return top_sequences, top_indices
+    row_rewards = rewards.tolist()
+    return top_sequences, top_indices, row_rewards
