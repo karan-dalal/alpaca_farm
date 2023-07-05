@@ -31,9 +31,13 @@ def compare_generation_format():
 def compare_addition_format():
     data = [
         {
-        "output": "/home/yusun/code/karan/data/multi-turn/addition/alpaca-format/13B.json",
-        "path": "data/addition/13B.jsonl",
-        },        
+        "output": "/home/yusun/code/karan/data/addition/alpaca-format/13B.json",
+        "path": "/home/yusun/code/karan/data/addition/13B.jsonl",
+        },  
+        {
+        "output": "/home/yusun/code/karan/data/addition/annotations/alpaca-format/b16.json",
+        "path": "/home/yusun/code/karan/data/addition/b16.jsonl",
+        },      
         {
         "output": "/home/yusun/code/karan/data/multi-turn/addition/alpaca-format/13B_beam.json",
         "path": "/home/yusun/code/karan/data/multi-turn/addition/13B_beam.jsonl",
@@ -113,7 +117,7 @@ def compare_addition_format():
         utils.jdump(responses, model["output"])
 
 def main():
-    compare_generation_format()
+    # compare_generation_format()
     compare_addition_format()
 
 if __name__ == "__main__":
